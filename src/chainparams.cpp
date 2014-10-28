@@ -70,7 +70,9 @@ static const Checkpoints::CCheckpointData data = {
                     //   (the tx=... number in the SetBestChain debug.log lines)
         1000.0      // * estimated number of transactions per day after checkpoint
     };
-
+    /* Devcoin had not testnet checkblocks, if they even start to exist, they can be added here */
+    static Checkpoints::MapCheckpoints mapCheckpointsTestnet  = boost::assign::map_list_of 
+		(0,  uint256("0x00000000fc09a99bd5116e9cedcad35d2145962799e58bbfd66ebdeb4e95235f"));
 static const Checkpoints::CCheckpointData dataTestnet = {
         &mapCheckpointsTestnet,
         1387426393,
@@ -269,7 +271,7 @@ public:
         genesis.nNonce = 2;
         hashGenesisBlock = genesis.GetHash();
         nDefaultPort = 18444;
-        assert(hashGenesisBlock == uint256("0x0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"));
+       // assert(hashGenesisBlock == uint256("0x0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"));
 
         vFixedSeeds.clear(); // Regtest mode doesn't have any fixed seeds.
         vSeeds.clear();  // Regtest mode doesn't have any DNS seeds.

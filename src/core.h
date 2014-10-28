@@ -11,23 +11,47 @@
 #include "script/script.h"
 #include "serialize.h"
 #include "uint256.h"
-
 #include <stdint.h>
+static inline int64_t roundint64(double d)
+{
+    return (int64_t)(d > 0 ? d + 0.5 : d - 0.5);
+}
 
-class CTransaction;
 class CAuxPow;
+class CTransaction;
+class CBlockIndex;
+enum
+{
+	// primary version
+	BLOCK_VERSION_DEFAULT        = (1 << 0),
+
+	// modifiers
+	BLOCK_VERSION_AUXPOW         = (1 << 8),
+
+	// bits allocated for chain ID
+	BLOCK_VERSION_CHAIN_START    = (1 << 16),
+	BLOCK_VERSION_CHAIN_END      = (1 << 30),
+};
+// Start accepting AUX POW at this block
+// 
+// Even if we do not accept AUX POW ourselves, we can always be the parent chain.
+ 
+inline int GetOurChainID()
+{
+    return 0x0004;
+}
+static const CAmount COIN = 100000000;
+static const CAmount CENT = 1000000;
+
 //DEVCOIN globals
-static const int64_t initialSubsidy = 50000*COIN ;
-static const int64_t share = roundint64(initialSubsidy * 0.9);
-static const int64_t fallbackReduction = roundint64((initialSubsidy + share) / 2);
+static const CAmount initialSubsidy = 50000*COIN ;
+static const CAmount share = roundint64(initialSubsidy * 0.9);
+static const CAmount fallbackReduction = roundint64((initialSubsidy + share) / 2);
 static const int step = 4000;
 
 const std::string receiverCSV = std::string("receiver.csv");
-static const int64_t COIN = 100000000;
-static const int64_t CENT = 1000000;
-
 /** No amount larger than this (in satoshi) is valid */
-static const CAmount MAX_MONEY = 21000000 * 1000*COIN;
+static const CAmount MAX_MONEY = 21000000 * COIN;
 inline bool MoneyRange(const CAmount& nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
 
 /** An outpoint - a combination of a transaction hash and an index n into its vout */
@@ -442,16 +466,16 @@ public:
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
-        READWRITE(this->nVersion);
-        nVersion = this->nVersion;
-        READWRITE(hashPrevBlock);
-        READWRITE(hashMerkleRoot);
-        READWRITE(nTime);
-        READWRITE(nBits);
-        READWRITE(nNonce);
-		nSerSize += ReadWriteAuxPow(s, auxpow, nType, nVersion, ser_action);
-    }
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion){
+		READWRITE(this->nVersion);
+		nVersion = this->nVersion;
+		READWRITE(hashPrevBlock);
+		READWRITE(hashMerkleRoot);
+		READWRITE(nTime);
+		READWRITE(nBits);
+		READWRITE(nNonce);
+		ReadWriteAuxPow(s, auxpow, nType, nVersion, ser_action);
+	}
 	void SetAuxPow(CAuxPow* pow);
     int GetChainID() const
     {
@@ -478,6 +502,7 @@ public:
     {
         return (int64_t)nTime;
     }
+	bool CheckProofOfWork(int nHeight) const;
 };
 
 
@@ -577,4 +602,124 @@ struct CBlockLocator
     }
 };
 
+/** A transaction with a merkle branch linking it to the block chain. */
+class CMerkleTx : public CTransaction
+{
+private:
+    int GetDepthInMainChainINTERNAL(CBlockIndex* &pindexRet) const;
+
+public:
+    uint256 hashBlock;
+    std::vector<uint256> vMerkleBranch;
+    int nIndex;
+
+    // memory only
+    mutable bool fMerkleVerified;
+
+
+    CMerkleTx()
+    {
+        Init();
+    }
+
+    CMerkleTx(const CTransaction& txIn) : CTransaction(txIn)
+    {
+        Init();
+    }
+
+    void Init()
+    {
+        hashBlock = 0;
+        nIndex = -1;
+        fMerkleVerified = false;
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+        READWRITE(*(CTransaction*)this);
+        nVersion = this->nVersion;
+        READWRITE(hashBlock);
+        READWRITE(vMerkleBranch);
+        READWRITE(nIndex);
+    }
+
+    int SetMerkleBranch(const CBlock& block);
+
+    // Return depth of transaction in blockchain:
+    // -1  : not in blockchain, and not in memory pool (conflicted transaction)
+    //  0  : in memory pool, waiting to be included in a block
+    // >=1 : this many blocks deep in the main chain
+    int GetDepthInMainChain(CBlockIndex* &pindexRet) const;
+    int GetDepthInMainChain() const { CBlockIndex *pindexRet; return GetDepthInMainChain(pindexRet); }
+    bool IsInMainChain() const { CBlockIndex *pindexRet; return GetDepthInMainChainINTERNAL(pindexRet) > 0; }
+    int GetBlocksToMaturity() const;
+    bool AcceptToMemoryPool(bool fLimitFree=true, bool fRejectInsaneFee=true);
+};
+class CAuxPow : public CMerkleTx
+{
+public:
+    CAuxPow(const CTransaction& txIn) : CMerkleTx(txIn)
+    {
+    }
+
+    CAuxPow() :CMerkleTx()
+    {
+    }
+
+    // Merkle branch with root vchAux
+    // root must be present inside the coinbase
+    std::vector<uint256> vChainMerkleBranch;
+    // Index of chain in chains merkle tree
+    unsigned int nChainIndex;
+    CBlockHeader parentBlockHeader;
+	
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+        READWRITE(*(CMerkleTx*)this);
+        nVersion = this->nVersion;
+        READWRITE(vChainMerkleBranch);
+        READWRITE(nChainIndex);
+
+        // Always serialize the saved parent block as header so that the size of CAuxPow
+        // is consistent.
+        READWRITE(parentBlockHeader);
+	}
+
+    bool Check(uint256 hashAuxBlock, int nChainID);
+
+    uint256 GetParentBlockHash()
+    {
+        return parentBlockHeader.GetHash();
+    }
+};
+template <typename Stream>
+void ReadWriteAuxPow(Stream& s, const boost::shared_ptr<CAuxPow>& auxpow, int nType, int nVersion, CSerActionSerialize ser_action)
+{
+    if (nVersion & BLOCK_VERSION_AUXPOW && auxpow.get() != NULL)
+    {
+        READWRITE(*auxpow);
+    }
+}
+
+template <typename Stream>
+void ReadWriteAuxPow(Stream& s, boost::shared_ptr<CAuxPow>& auxpow, int nType, int nVersion, CSerActionUnserialize ser_action)
+{
+    if (nVersion & BLOCK_VERSION_AUXPOW)
+    {
+		CAuxPow* newPow = new CAuxPow();
+        auxpow.reset(newPow);
+        READWRITE(*auxpow);
+    }
+    else
+    {
+        auxpow.reset();
+    }
+}
+extern void IncrementExtraNonceWithAux(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce, std::vector<unsigned char>& vchAux);
+extern void RemoveMergedMiningHeader(std::vector<unsigned char>& vchAux);
+extern CScript MakeCoinbaseWithAux(unsigned int nBits, unsigned int nExtraNonce, std::vector<unsigned char>& vchAux);
 #endif // BITCOIN_CORE_H

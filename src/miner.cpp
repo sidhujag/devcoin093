@@ -12,6 +12,7 @@
 #include "pow.h"
 #include "util.h"
 #include "utilmoneystr.h"
+#include "base58.h"
 #ifdef ENABLE_WALLET
 #include "wallet.h"
 #endif
@@ -83,7 +84,7 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
     if(!pblocktemplate.get())
         return NULL;
     CBlock *pblock = &pblocktemplate->block; // pointer for convenience
-
+	CBlockIndex* pindexPrev = chainActive.Tip();
     // -regtest only: allow overriding block.nVersion with
     // -blockversion=N to test forking scenarios
     if (Params().MineBlocksOnDemand())
@@ -103,13 +104,13 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
 	
 	// Prepare to pay beneficiaries
 
-    int64_t nFees = 0;
-    int64_t minerValue = GetBlockValue(pindexPrev->nHeight+1, nFees);
-    int64_t sharePerAddress = 0;
+    CAmount nFees = 0;
+    CAmount minerValue = GetBlockValue(pindexPrev->nHeight+1, nFees);
+    CAmount sharePerAddress = 0;
     if (coinAddressStrings.size() == 0)
         minerValue -= fallbackReduction;
     else
-        sharePerAddress = roundint64((int64_t)share / (int64_t)coinAddressStrings.size());
+        sharePerAddress = roundint64(share / (CAmount)coinAddressStrings.size());
 	
 	LogPrintf("coinAddressStrings: %d\n", coinAddressStrings.size());
     for (unsigned int i=0; i<coinAddressStrings.size(); i++)
@@ -127,7 +128,7 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
 		
 		if(addr.GetKeyID(addrKeyId))
 		{
-			txNew.vout[i + 1].scriptPubKey << OP_DUP << OP_HASH160 << addrKeyId << OP_EQUALVERIFY << OP_CHECKSIG;
+			txNew.vout[i + 1].scriptPubKey << OP_DUP << OP_HASH160 << ToByteVector(addrKeyId) << OP_EQUALVERIFY << OP_CHECKSIG;
 			txNew.vout[i + 1].nValue = sharePerAddress;
 			
 			minerValue -= sharePerAddress;
@@ -167,8 +168,6 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
     nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
 
     // Collect memory pool transactions into the block
-    CAmount nFees = 0;
-
     {
         LOCK2(cs_main, mempool.cs);
         CBlockIndex* pindexPrev = chainActive.Tip();
@@ -357,9 +356,9 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
         LogPrintf("CreateNewBlock(): total size %u\n", nBlockSize);
 
         // Compute final coinbase transaction.
-        //pblock->vtx[0].vout[0].nValue = GetBlockValue(pindexPrev->nHeight+1, nFees);
+       // txNew.vout[0].nValue = GetBlockValue(pindexPrev->nHeight+1, nFees);
 		// DEVCOIN
-		pblock->vtx[0].vout[0].nValue = minerValue + nFees;
+		txNew.vout[0].nValue = minerValue + nFees;
         txNew.vin[0].scriptSig = CScript() << OP_0 << OP_0;
         pblock->vtx[0] = txNew;
         pblocktemplate->vTxFees[0] = -nFees;
@@ -458,7 +457,8 @@ CBlockTemplate* CreateNewBlockWithKey(CReserveKey& reservekey)
 bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
 {
 	uint256 hash = pblock->GetHash();
-    uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+    uint256 hashTarget;
+	hashTarget.SetCompact(pblock->nBits);
     CAuxPow *auxpow = pblock->auxpow.get();
 
     if (auxpow != NULL)
@@ -493,7 +493,7 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     {
         LOCK(cs_main);
         if (pblock->hashPrevBlock != chainActive.Tip()->GetBlockHash())
-            return error("BitcoinMiner : generated block is stale");
+            return error("DevcoinMiner : generated block is stale");
     }
 
     // Remove key from key pool
@@ -508,7 +508,7 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     // Process this block the same as if we had received it from another node
     CValidationState state;
     if (!ProcessBlock(state, NULL, pblock))
-        return error("BitcoinMiner : ProcessBlock, block not accepted");
+        return error("DevcoinMiner : ProcessBlock, block not accepted");
 
     return true;
 }
@@ -554,7 +554,8 @@ void static BitcoinMiner(CWallet *pwallet)
             // Search
             //
             int64_t nStart = GetTime();
-            uint256 hashTarget = uint256().SetCompact(pblock->nBits);
+            uint256 hashTarget;
+			hashTarget.SetCompact(pblock->nBits);
             uint256 hash;
             uint32_t nNonce = 0;
             uint32_t nOldNonce = 0;

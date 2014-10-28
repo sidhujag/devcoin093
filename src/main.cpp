@@ -18,7 +18,7 @@
 #include "ui_interface.h"
 #include "util.h"
 #include "utilmoneystr.h"
-
+#include "base58.h"
 #include <sstream>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -1308,7 +1308,7 @@ void static InvalidBlockFound(CBlockIndex *pindex, const CValidationState &state
     }
     if (!state.CorruptionPossible()) {
         pindex->nStatus |= BLOCK_FAILED_VALID;
-        pblocktree->WriteBlockIndex(CDiskBlockIndex(pindex));
+        pblocktree->WriteBlockIndex(*pindex);
         setBlockIndexCandidates.erase(pindex);
         InvalidChainFound(pindex);
     }
@@ -1735,8 +1735,8 @@ bool ConnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex, C
 
         pindex->RaiseValidity(BLOCK_VALID_SCRIPTS);
 
-        CDiskBlockIndex blockindex(pindex);
-        if (!pblocktree->WriteBlockIndex(blockindex))
+
+        if (!pblocktree->WriteBlockIndex(*pindex))
             return state.Abort("Failed to write block index");
     }
 
@@ -2116,6 +2116,8 @@ CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
     BlockMap::iterator miPrev = mapBlockIndex.find(block.hashPrevBlock);
     if (miPrev != mapBlockIndex.end())
     {
+		// only possible if pindexNew is not the genesis block ?!?!!?
+		assert(pindexNew->GetBlockHash() != Params().HashGenesisBlock());
         pindexNew->pprev = (*miPrev).second;
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
         pindexNew->BuildSkip();
@@ -2126,8 +2128,8 @@ CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
         pindexBestHeader = pindexNew;
 
     // Ok if it fails, we'll download the header again next time.
-	if (!pblocktree->WriteDiskBlockIndex(CDiskBlockIndex(pindexNew, block.auxpow))
-		pblocktree->WriteBlockIndex(*pindexNew)
+	if (pblocktree->WriteDiskBlockIndex(CDiskBlockIndex(pindexNew, block.auxpow)))
+		pblocktree->WriteBlockIndex(*pindexNew);
 
 
     return pindexNew;
@@ -2166,14 +2168,14 @@ bool ReceivedBlockTransactions(const CBlock &block, CValidationState& state, CBl
                 range.first++;
                 mapBlocksUnlinked.erase(it);
             }
-            if (!pblocktree->WriteBlockIndex(CDiskBlockIndex(pindex)))
+            if (!pblocktree->WriteBlockIndex(*pindex))
                 return state.Abort("Failed to write block index");
         }
     } else {
         if (pindexNew->pprev && pindexNew->pprev->IsValid(BLOCK_VALID_TREE)) {
             mapBlocksUnlinked.insert(std::make_pair(pindexNew->pprev, pindexNew));
         }
-        if (!pblocktree->WriteBlockIndex(CDiskBlockIndex(pindexNew)))
+        if (!pblocktree->WriteBlockIndex(*pindexNew))
             return state.Abort("Failed to write block index");
     }
 
@@ -2284,7 +2286,7 @@ bool CheckBlock(const CBlock& block, CValidationState& state, int nHeight, bool 
 {
     // These are checks that are independent of context.
 
-    if (!CheckBlockHeader(block, nHeight, state, fCheckPOW))
+    if (!CheckBlockHeader(block, state, nHeight, fCheckPOW))
         return false;
 
     // Check the merkle root.

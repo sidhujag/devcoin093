@@ -14,7 +14,7 @@
 #include <vector>
 
 #include <boost/foreach.hpp>
-class CAuxPow;
+
 struct CDiskBlockPos
 {
     int nFile;
@@ -47,18 +47,6 @@ struct CDiskBlockPos
 
     void SetNull() { nFile = -1; nPos = 0; }
     bool IsNull() const { return (nFile == -1); }
-};
-enum
-{
-	// primary version
-	BLOCK_VERSION_DEFAULT        = (1 << 0),
-
-	// modifiers
-	BLOCK_VERSION_AUXPOW         = (1 << 8),
-
-	// bits allocated for chain ID
-	BLOCK_VERSION_CHAIN_START    = (1 << 16),
-	BLOCK_VERSION_CHAIN_END      = (1 << 30),
 };
 enum BlockStatus {
     // Unused.
@@ -187,6 +175,23 @@ public:
         nNonce         = block.nNonce;
     }
 
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+	inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+        /* mutable stuff goes here, immutable stuff
+         * has SERIALIZE functions in CDiskBlockIndex */
+        if (!(nType & SER_GETHASH))
+            READWRITE(VARINT(nVersion));
+
+        READWRITE(VARINT(nStatus));
+        if (nStatus & (BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO))
+            READWRITE(VARINT(nFile));
+        if (nStatus & BLOCK_HAVE_DATA)
+            READWRITE(VARINT(nDataPos));
+        if (nStatus & BLOCK_HAVE_UNDO)
+            READWRITE(VARINT(nUndoPos));
+	}
     CDiskBlockPos GetBlockPos() const {
         CDiskBlockPos ret;
         if (nStatus & BLOCK_HAVE_DATA) {
@@ -306,41 +311,24 @@ public:
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
-        if (!(nType & SER_GETHASH))
-            READWRITE(VARINT(nVersion));
+	inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion){
+	    /* immutable stuff goes here, mutable stuff
+         * has SERIALIZE functions in CDiskBlockIndex */	
+		if (!(nType & SER_GETHASH))
+			READWRITE(VARINT(nVersion));
 
-        READWRITE(VARINT(nHeight));
-        READWRITE(VARINT(nStatus));
-        READWRITE(VARINT(nTx));
-        if (nStatus & (BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO))
-            READWRITE(VARINT(nFile));
-        if (nStatus & BLOCK_HAVE_DATA)
-            READWRITE(VARINT(nDataPos));
-        if (nStatus & BLOCK_HAVE_UNDO)
-            READWRITE(VARINT(nUndoPos));
+		READWRITE(VARINT(nHeight));
+		READWRITE(VARINT(nTx));
 
-        // block header
-        READWRITE(this->nVersion);
-        READWRITE(hashPrev);
-        READWRITE(hashMerkleRoot);
-        READWRITE(nTime);
-        READWRITE(nBits);
-        READWRITE(nNonce);
+		// block header
+		READWRITE(this->nVersion);
+		READWRITE(hashPrev);
+		READWRITE(hashMerkleRoot);
+		READWRITE(nTime);
+		READWRITE(nBits);
+		READWRITE(nNonce);
 		ReadWriteAuxPow(s, auxpow, nType, this->nVersion, ser_action);
-    }
-
-    uint256 GetBlockHash() const
-    {
-        CBlockHeader block;
-        block.nVersion        = nVersion;
-        block.hashPrevBlock   = hashPrev;
-        block.hashMerkleRoot  = hashMerkleRoot;
-        block.nTime           = nTime;
-        block.nBits           = nBits;
-        block.nNonce          = nNonce;
-        return block.GetHash();
-    }
+	}
 
     uint256 CalcBlockHash() const
     {
@@ -353,16 +341,9 @@ public:
         block.nNonce          = nNonce;
         return block.GetHash();
     }
+
 	bool CheckIndex() const;
-    std::string ToString() const
-    {
-        std::string str = "CDiskBlockIndex(";
-        str += CBlockIndex::ToString();
-        str += strprintf("\n                hashBlock=%s, hashPrev=%s)",
-            GetBlockHash().ToString(),
-            hashPrev.ToString());
-        return str;
-    }
+    std::string ToString() const;
 };
 
 /** An in-memory indexed chain of blocks. */

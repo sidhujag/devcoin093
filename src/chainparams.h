@@ -80,6 +80,8 @@ public:
     const std::vector<unsigned char>& Base58Prefix(Base58Type type) const { return base58Prefixes[type]; }
     const std::vector<CAddress>& FixedSeeds() const { return vFixedSeeds; }
     virtual const Checkpoints::CCheckpointData& Checkpoints() const = 0;
+	CBaseChainParams::Network NetworkID() const { return networkID; }
+
 protected:
     CChainParams() {}
 
@@ -150,12 +152,4 @@ void SelectParams(CBaseChainParams::Network network);
  * Returns false if an invalid combination is given.
  */
 bool SelectParamsFromCommandLine();
-inline bool TestNet() {
-    // Note: it's deliberate that this returns "false" for regression test mode.
-    return Params().NetworkID() == CChainParams::TESTNET;
-}
-
-inline bool RegTest() {
-    return Params().NetworkID() == CChainParams::REGTEST;
-}
 #endif // BITCOIN_CHAIN_PARAMS_H

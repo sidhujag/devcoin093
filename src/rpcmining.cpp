@@ -12,6 +12,7 @@
 #include "pow.h"
 #include "rpcserver.h"
 #include "util.h"
+#include "miner.cpp"
 #ifdef ENABLE_WALLET
 #include "db.h"
 #include "wallet.h"
@@ -26,7 +27,35 @@
 
 using namespace json_spirit;
 using namespace std;
+#ifdef ENABLE_WALLET
+// Key used by getwork miners.
+// Allocated in InitRPCMining, free'd in ShutdownRPCMining
+static CReserveKey* pMiningKey = NULL;
 
+void InitRPCMining()
+{
+    if (!pwalletMain)
+        return;
+
+    // getwork/getblocktemplate mining rewards paid here:
+    pMiningKey = new CReserveKey(pwalletMain);
+}
+
+void ShutdownRPCMining()
+{
+    if (!pMiningKey)
+        return;
+
+    delete pMiningKey; pMiningKey = NULL;
+}
+#else
+void InitRPCMining()
+{
+}
+void ShutdownRPCMining()
+{
+}
+#endif
 // Return average network hashes per second based on the last 'lookup' blocks,
 // or from the last difficulty change if 'lookup' is nonpositive.
 // If 'height' is nonnegative, compute the estimate at the time when a given block was found.
@@ -103,7 +132,8 @@ Value getgenerate(const Array& params, bool fHelp)
             + HelpExampleCli("getgenerate", "")
             + HelpExampleRpc("getgenerate", "")
         );
-
+    if (!pMiningKey)
+        return false;
     return GetBoolArg("-gen", false);
 }
 
@@ -247,7 +277,85 @@ Value getmininginfo(const Array& params, bool fHelp)
 #endif
     return obj;
 }
+int static FormatHashBlocks(void* pbuffer, unsigned int len)
+{
+    unsigned char* pdata = (unsigned char*)pbuffer;
+    unsigned int blocks = 1 + ((len + 8) / 64);
+    unsigned char* pend = pdata + 64 * blocks;
+    memset(pdata + len, 0, 64 * blocks - len);
+    pdata[len] = 0x80;
+    unsigned int bits = len * 8;
+    pend[-1] = (bits >> 0) & 0xff;
+    pend[-2] = (bits >> 8) & 0xff;
+    pend[-3] = (bits >> 16) & 0xff;
+    pend[-4] = (bits >> 24) & 0xff;
+    return blocks;
+}
 
+static const unsigned int pSHA256InitState[8] =
+{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+
+void SHA256Transform(void* pstate, void* pinput, const void* pinit)
+{
+    SHA256_CTX ctx;
+    unsigned char data[64];
+
+    SHA256_Init(&ctx);
+
+    for (int i = 0; i < 16; i++)
+        ((uint32_t*)data)[i] = ByteReverse(((uint32_t*)pinput)[i]);
+
+    for (int i = 0; i < 8; i++)
+        ctx.h[i] = ((uint32_t*)pinit)[i];
+
+    SHA256_Update(&ctx, data, sizeof(data));
+    for (int i = 0; i < 8; i++)
+        ((uint32_t*)pstate)[i] = ctx.h[i];
+}
+void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1)
+{
+    //
+    // Pre-build hash buffers
+    //
+    struct
+    {
+        struct unnamed2
+        {
+            int nVersion;
+            uint256 hashPrevBlock;
+            uint256 hashMerkleRoot;
+            unsigned int nTime;
+            unsigned int nBits;
+            unsigned int nNonce;
+        }
+        block;
+        unsigned char pchPadding0[64];
+        uint256 hash1;
+        unsigned char pchPadding1[64];
+    }
+    tmp;
+    memset(&tmp, 0, sizeof(tmp));
+
+    tmp.block.nVersion       = pblock->nVersion;
+    tmp.block.hashPrevBlock  = pblock->hashPrevBlock;
+    tmp.block.hashMerkleRoot = pblock->hashMerkleRoot;
+    tmp.block.nTime          = pblock->nTime;
+    tmp.block.nBits          = pblock->nBits;
+    tmp.block.nNonce         = pblock->nNonce;
+
+    FormatHashBlocks(&tmp.block, sizeof(tmp.block));
+    FormatHashBlocks(&tmp.hash1, sizeof(tmp.hash1));
+
+    // Byte swap all the input buffer
+    for (unsigned int i = 0; i < sizeof(tmp)/4; i++)
+        ((unsigned int*)&tmp)[i] = ByteReverse(((unsigned int*)&tmp)[i]);
+
+    // Precalc the first half of the first hash, which stays constant
+    SHA256Transform(pmidstate, &tmp.block, pSHA256InitState);
+
+    memcpy(pdata, &tmp.block, 128);
+    memcpy(phash1, &tmp.hash1, 64);
+}
 Value getworkaux(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1)
@@ -325,7 +433,7 @@ Value getworkaux(const Array& params, bool fHelp)
         CBlock* pblock = &pblocktemplate->block; // pointer for convenience
 
         // Update nTime
-        UpdateTime(*pblock, pindexPrev);
+        UpdateTime(pblock, pindexPrev);
         pblock->nNonce = 0;
 
         // Update nExtraNonce
@@ -341,7 +449,8 @@ Value getworkaux(const Array& params, bool fHelp)
         char phash1[64];
         FormatHashBuffers(pblock, pmidstate, pdata, phash1);
 
-        uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+        uint256 hashTarget;
+		hashTarget.SetCompact(pblock->nBits);
 
         Object result;
         result.push_back(Pair("midstate", HexStr(BEGIN(pmidstate), END(pmidstate)))); // deprecated
@@ -386,9 +495,10 @@ Value getworkaux(const Array& params, bool fHelp)
 
         RemoveMergedMiningHeader(vchAux);
 
-		unsigned int nHeight = pindexBest->nHeight+1; // Height first in coinbase required for block.version=2
-        pblock->vtx[0].vin[0].scriptSig = MakeCoinbaseWithAux(nHeight, nExtraNonce, vchAux);
-
+		unsigned int nHeight = chainActive.Tip()->nHeight+1; // Height first in coinbase required for block.version=2
+		CMutableTransaction txCoinbase(pblock->vtx[0]);
+        txCoinbase.vin[0].scriptSig = MakeCoinbaseWithAux(nHeight, nExtraNonce, vchAux);
+		pblock->vtx[0] = txCoinbase;
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
         assert(pwalletMain != NULL);
@@ -406,7 +516,7 @@ Value getworkaux(const Array& params, bool fHelp)
                 pow.vChainMerkleBranch.push_back(nHash);
             }
 
-            pow.SetMerkleBranch(pblock);
+            pow.SetMerkleBranch(*pblock);
             pow.nChainIndex = nChainIndex;
             pow.parentBlockHeader = *pblock;
             CDataStream ss(SER_GETHASH, PROTOCOL_VERSION);
@@ -419,7 +529,7 @@ Value getworkaux(const Array& params, bool fHelp)
         {
             if (params[0].get_str() == "submit")
             {
-                return CheckWork(pblock, *pwalletMain, *pMiningKey);
+                return ProcessBlockFound(pblock, *pwalletMain, *pMiningKey);
             }
             else
             {
@@ -482,7 +592,7 @@ Value getauxblock(const Array& params, bool fHelp)
 
 			pblock = &pblocktemplate->block;
             // Update nTime
-            UpdateTime(*pblock, pindexPrev);
+            UpdateTime(pblock, pindexPrev);
             pblock->nNonce = 0;
 			// Need to update only after we know CreateNewBlock succeeded
             pindexPrev = pindexPrevNew;
@@ -500,7 +610,8 @@ Value getauxblock(const Array& params, bool fHelp)
             vNewBlockTemplate.push_back(pblocktemplate);
 
         }
-        uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+        uint256 hashTarget;
+		hashTarget.SetCompact(pblock->nBits);
         Object result;
         result.push_back(Pair("target",   HexStr(BEGIN(hashTarget), END(hashTarget))));
         result.push_back(Pair("hash", pblock->GetHash().GetHex()));
@@ -520,7 +631,7 @@ Value getauxblock(const Array& params, bool fHelp)
 
         CBlock* pblock = mapNewBlock[hash];
         pblock->SetAuxPow(pow);
-        if (!CheckWork(pblock, *pwalletMain, *pMiningKey))
+        if (!ProcessBlockFound(pblock, *pwalletMain, *pMiningKey))
         {
             return false;
         }
@@ -814,7 +925,8 @@ Value getblocktemplate(const Array& params, bool fHelp)
     Object aux;
     aux.push_back(Pair("flags", HexStr(COINBASE_FLAGS.begin(), COINBASE_FLAGS.end())));
 
-    uint256 hashTarget = uint256().SetCompact(pblock->nBits);
+    uint256 hashTarget;
+	hashTarget.SetCompact(pblock->nBits);
 
     static Array aMutable;
     if (aMutable.empty())

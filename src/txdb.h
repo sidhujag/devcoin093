@@ -50,7 +50,7 @@ private:
 public:
 	bool WriteDiskBlockIndex(const CDiskBlockIndex& diskblockindex);
 	bool ReadDiskBlockIndex(const uint256 &blkid, CDiskBlockIndex &diskblockindex);
-    bool WriteBlockIndex(const CDiskBlockIndex& blockindex);
+    bool WriteBlockIndex(const CBlockIndex& blockindex);
     bool ReadBlockFileInfo(int nFile, CBlockFileInfo &fileinfo);
     bool WriteBlockFileInfo(int nFile, const CBlockFileInfo &fileinfo);
     bool ReadLastBlockFile(int &nFile);

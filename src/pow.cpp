@@ -6,44 +6,18 @@
 #include "pow.h"
 
 #include "chainparams.h"
-#include "core.h"
-#include "main.h"
 #include "timedata.h"
 #include "uint256.h"
 #include "util.h"
-// Start accepting AUX POW at this block
-// 
-// Even if we do not accept AUX POW ourselves, we can always be the parent chain.
- 
-inline int GetAuxPowStartBlock()
-{
-    if (TestNet())
-        return 0; // Always on testnet
-    else
-        return 25000; // Never on prodnet
-}
-inline int GetOurChainID()
-{
-    return 0x0004;
-}
-unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
-{
-	if(pindexLast->nHeight >= 150000)
-	{
-		GetNextWorkRequired_Original(pindexLast, pblock);
-	}
-	else
-	{
-		GetNextWorkRequired_Old(pindexLast, pblock);
-	}
-}
+#include "core.h"
+
 unsigned int GetNextWorkRequired_Old(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
 {
     unsigned int nProofOfWorkLimit = Params().ProofOfWorkLimit().GetCompact();
 
     const int nSmoothBlock = 10700;
     const int64_t nTargetSpacing = Params().TargetSpacing();
-    const int64_t nTargetTimespan = Params().TargetTimespan(); // one day
+    int64_t nTargetTimespan = Params().TargetTimespan(); // one day
 
     if (pindexLast->nHeight < nSmoothBlock)
         nTargetTimespan *= 14; // two weeks
@@ -66,7 +40,7 @@ unsigned int GetNextWorkRequired_Old(const CBlockIndex* pindexLast, const CBlock
         if ((pindexLast->nHeight+1) % nInterval != 0)
 		{
 			// Special difficulty rule for testnet:
-			if (TestNet() == true)
+			if (Params().NetworkID() == CBaseChainParams::TESTNET)
 			{
 				// If the new block's timestamp is more than 2* 10 minutes
 				// then allow mining of a min-difficulty block.
@@ -87,12 +61,14 @@ unsigned int GetNextWorkRequired_Old(const CBlockIndex* pindexLast, const CBlock
     // Go back by what we want to be one day worth of blocks
     const CBlockIndex* pindexFirst = pindexLast;
     vector<int64_t> blockTimes;
-    CBigNum averageBits;
+    uint256 averageBits;
     averageBits.SetCompact(0);
 
     for (int i = 0; pindexFirst && i < nIntervalMinusOne; i++)
     {
-        averageBits += CBigNum().SetCompact(pindexFirst->nBits);
+		uint256 tempBit;
+		tempBit.SetCompact(pindexFirst->nBits);
+        averageBits += tempBit;
         blockTimes.push_back(pindexFirst->GetBlockTime());
         pindexFirst = pindexFirst->pprev;
     }
@@ -122,7 +98,7 @@ unsigned int GetNextWorkRequired_Old(const CBlockIndex* pindexLast, const CBlock
         nActualTimespan = nTargetTimespan*4;
 
     // Retarget
-    CBigNum bnNew;
+    uint256 bnNew;
     bnNew.SetCompact(pindexLast->nBits);
 
     // Change bnNew after nMedianBlock
@@ -146,15 +122,15 @@ unsigned int GetNextWorkRequired_Old(const CBlockIndex* pindexLast, const CBlock
 unsigned int GetNextWorkRequired_Original(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
 {
     unsigned int nProofOfWorkLimit = Params().ProofOfWorkLimit().GetCompact();
-
+	const int64_t nInterval = Params().Interval();
     // Genesis block
     if (pindexLast == NULL)
         return nProofOfWorkLimit;
-
+	
     // Only change once per interval
     if ((pindexLast->nHeight+1) % nInterval != 0)
     {
-        if (TestNet())
+        if (Params().NetworkID() == CBaseChainParams::TESTNET)
         {
             // Special difficulty rule for testnet:
             // If the new block's timestamp is more than 2* 10 minutes
@@ -188,24 +164,34 @@ unsigned int GetNextWorkRequired_Original(const CBlockIndex* pindexLast, const C
         nActualTimespan = Params().TargetTimespan()*4;
 
     // Retarget
-    CBigNum bnNew;
+    uint256 bnNew;
+	uint256 bnOld;
     bnNew.SetCompact(pindexLast->nBits);
     bnNew *= nActualTimespan;
     bnNew /= Params().TargetTimespan();
 
     if (bnNew > Params().ProofOfWorkLimit())
         bnNew = Params().ProofOfWorkLimit();
-
+	bnOld.SetCompact(pindexLast->nBits);
     /// debug print
     LogPrintf("GetNextWorkRequired RETARGET\n");
     LogPrintf("nTargetTimespan = %d    nActualTimespan = %d\n", Params().TargetTimespan(), nActualTimespan);
-    LogPrintf("Before: %08x  %s\n", pindexLast->nBits, CBigNum().SetCompact(pindexLast->nBits).getuint256().ToString());
-    LogPrintf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString());
+    LogPrintf("Before: %08x  %s\n", pindexLast->nBits, bnOld.ToString());
+    LogPrintf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.ToString());
 
     return bnNew.GetCompact();
 }
-
-
+unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
+{
+	if(pindexLast->nHeight >= 150000)
+	{
+		GetNextWorkRequired_Original(pindexLast, pblock);
+	}
+	else
+	{
+		GetNextWorkRequired_Old(pindexLast, pblock);
+	}
+}
 
 void CBlockHeader::SetAuxPow(CAuxPow* pow) {
 	if (pow != NULL)
@@ -214,14 +200,22 @@ void CBlockHeader::SetAuxPow(CAuxPow* pow) {
 		nVersion &= ~BLOCK_VERSION_AUXPOW;
 	auxpow.reset(pow);
 }
-
+int GetAuxPowStartBlock()
+{
+    if (Params().NetworkID() == CBaseChainParams::TESTNET)
+        return 0; // Always on testnet
+    else
+        return 25000; // Never on prodnet
+}
 bool CBlockHeader::CheckProofOfWork(int nHeight) const {
+	if (Params().SkipProofOfWorkCheck())
+       return true;
 	if (nHeight >= GetAuxPowStartBlock()) {
 		// Prevent same work from being submitted twice:
 		// - this block must have our chain ID
 		// - parent block must not have the same chain ID (see CAuxPow::Check)
 		// - index of this chain in chain merkle tree must be pre-determined (see CAuxPow::Check)
-		if (!TestNet() && nHeight != INT_MAX && GetChainID() != GetOurChainID())
+		if (Params().NetworkID() == CBaseChainParams::MAIN && nHeight != INT_MAX && GetChainID() != GetOurChainID())
 			return error(
 					"CheckProofOfWork() : block does not have our chain ID");
 
@@ -233,7 +227,7 @@ bool CBlockHeader::CheckProofOfWork(int nHeight) const {
 				return error("CheckProofOfWork() : AUX proof of work failed");
 		} else {
 			// Check proof of work matches claimed amount
-			if (!::CheckProofOfWork(GetPoWHash(), nBits))
+			if (!::CheckProofOfWork(GetHash(), nBits))
 				return error("CheckProofOfWork() : proof of work failed");
 		}
 	} else {
@@ -243,7 +237,7 @@ bool CBlockHeader::CheckProofOfWork(int nHeight) const {
 		}
 
 		// Check if proof of work marches claimed amount
-		if (!::CheckProofOfWork(GetPoWHash(), nBits))
+		if (!::CheckProofOfWork(GetHash(), nBits))
 			return error("CheckProofOfWork() : proof of work failed");
 	}
 	return true;
