@@ -992,5 +992,7 @@ public:
 private:
     std::vector<char> _ssExtra;
 };
-
+extern void IncrementExtraNonceWithAux(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce, std::vector<unsigned char>& vchAux);
+extern void RemoveMergedMiningHeader(std::vector<unsigned char>& vchAux);
+extern CScript MakeCoinbaseWithAux(unsigned int nBits, unsigned int nExtraNonce, std::vector<unsigned char>& vchAux);
 #endif // BITCOIN_WALLET_H
