@@ -10,7 +10,7 @@
 #include "uint256.h"
 #include "util.h"
 #include "core.h"
-
+#include "wallet.h"
 unsigned int GetNextWorkRequired_Old(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
 {
     unsigned int nProofOfWorkLimit = Params().ProofOfWorkLimit().GetCompact();
