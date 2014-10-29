@@ -111,7 +111,7 @@ public:
         nRejectBlockOutdatedMajority = 950;
         nToCheckBlockUpgradeMajority = 1000;
         nMinerThreads = 0;
-        nTargetTimespan = 24 * 60 * 60; // two weeks
+        nTargetTimespan = 24 * 60 * 60; // one day
         nTargetSpacing = 10 * 60;
 
         // Build the genesis block. Note that the output of the genesis coinbase cannot
@@ -199,16 +199,28 @@ public:
         nEnforceBlockUpgradeMajority = 51;
         nRejectBlockOutdatedMajority = 75;
         nToCheckBlockUpgradeMajority = 100;
+		bnProofOfWorkLimit = ~uint256(0) >> 28;
         nMinerThreads = 0;
-        nTargetTimespan = 24 * 60 * 60; // two weeks
+        nTargetTimespan = 24 * 60 * 60; // one day
         nTargetSpacing = 10 * 60;
+		const char* pszTimestamp = "The Times web front page 22-Jul-2011 Europe hails 'historic' deal to save single currency";
+        CMutableTransaction txNew;
+        txNew.vin.resize(1);
+        txNew.vout.resize(1);
+        txNew.vin[0].scriptSig = CScript() << 486604799 << CScriptNum(4) << vector<unsigned char>((const unsigned char*)pszTimestamp, (const unsigned char*)pszTimestamp + strlen(pszTimestamp));
+        txNew.vout[0].nValue = 50 * COIN;
+        txNew.vout[0].scriptPubKey = CScript() << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f") << OP_CHECKSIG;
+        genesis.vtx.push_back(txNew);
+        genesis.hashPrevBlock = 0;
+        genesis.hashMerkleRoot = genesis.BuildMerkleTree();
+        genesis.nVersion = 1;
+        genesis.nTime    = 1311305081;
+        genesis.nBits    = 0x1d00ffff;
+        genesis.nNonce   = 3085127155;
 
-        // Modify the testnet genesis block so the timestamp is valid for a later start.
-        genesis.nTime = 1296688602;
-        genesis.nNonce = 3085127155;
         hashGenesisBlock = genesis.GetHash();
-       // assert(hashGenesisBlock == uint256("0x000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"));
-
+        assert(hashGenesisBlock == uint256("0x4ecac46e98120fcf958f372a28ccfe505679a261e51e0c79e7ea24507c72bf04"));
+		assert(genesis.hashMerkleRoot == uint256("0x92849cf14251e872336da6caf5be0cca44a71898d02393e1f698980a0cc4770b"));
         vFixedSeeds.clear();
         vSeeds.clear();
         vSeeds.push_back(CDNSSeedData("devtome.com", "dvcstable01.devtome.com"));
@@ -230,13 +242,13 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = list_of(0x04)(0x35)(0x83)(0x94);
 
         convertSeed6(vFixedSeeds, pnSeed6_test, ARRAYLEN(pnSeed6_test));
-
-        fRequireRPCPassword = true;
-        fMiningRequiresPeers = true;
+		fSkipProofOfWorkCheck = false;
+        fRequireRPCPassword = false;
+        fMiningRequiresPeers = false;
         fDefaultCheckMemPool = false;
         fAllowMinDifficultyBlocks = true;
         fRequireStandard = false;
-        fMineBlocksOnDemand = false;
+        fMineBlocksOnDemand = true;
         fTestnetToBeDeprecatedFieldRPC = true;
     }
     const Checkpoints::CCheckpointData& Checkpoints() const 
@@ -270,7 +282,7 @@ public:
         genesis.nBits = 0x207fffff;
         genesis.nNonce = 2;
         hashGenesisBlock = genesis.GetHash();
-        nDefaultPort = 18444;
+        nDefaultPort = 52444;
        // assert(hashGenesisBlock == uint256("0x0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"));
 
         vFixedSeeds.clear(); // Regtest mode doesn't have any fixed seeds.
@@ -299,7 +311,7 @@ public:
     CUnitTestParams() {
         networkID = CBaseChainParams::UNITTEST;
         strNetworkID = "unittest";
-        nDefaultPort = 18445;
+        nDefaultPort = 52445;
         vFixedSeeds.clear();
         vSeeds.clear();  // Regtest mode doesn't have any DNS seeds.
 
