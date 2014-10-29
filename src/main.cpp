@@ -1163,7 +1163,8 @@ bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex)
 
 CAmount GetBlockValue(int nHeight, const CAmount& nFees)
 {
-    return initialSubsidy;
+    int64_t nSubsidy = initialSubsidy;
+    return nSubsidy + nFees;
 }
 
 bool IsInitialBlockDownload()

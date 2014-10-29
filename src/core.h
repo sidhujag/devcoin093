@@ -222,7 +222,7 @@ public:
         // so dust is a txout less than 546 satoshis 
         // with default minRelayTxFee.
         size_t nSize = GetSerializeSize(SER_DISK,0)+148u;
-        return (nValue < 3*minRelayTxFee.GetFee(nSize));
+        return ((nValue*1000) < 3*minRelayTxFee.GetFee(nSize));
     }
 
     friend bool operator==(const CTxOut& a, const CTxOut& b)
