@@ -51,7 +51,7 @@ static const int step = 4000;
 
 const std::string receiverCSV = std::string("receiver.csv");
 /** No amount larger than this (in satoshi) is valid */
-static const CAmount MAX_MONEY = 21000000 * COIN;
+static const CAmount MAX_MONEY = (CAmount)21000000 * (CAmount)1000 * COIN;
 inline bool MoneyRange(const CAmount& nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
 
 /** An outpoint - a combination of a transaction hash and an index n into its vout */

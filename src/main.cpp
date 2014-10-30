@@ -1444,6 +1444,12 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
 
 bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& view, bool* pfClean)
 {
+	if(view.GetBestBlock() == uint256(0))
+	{
+		if (pfClean)
+			*pfClean = true;
+		return true;
+	}
     assert(pindex->GetBlockHash() == view.GetBestBlock());
 
     if (pfClean)
