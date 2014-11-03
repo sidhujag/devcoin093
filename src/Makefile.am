@@ -52,11 +52,11 @@ bin_PROGRAMS =
 TESTS =
 
 if BUILD_BITCOIND
-  bin_PROGRAMS += bitcoind
+  bin_PROGRAMS += devcoind
 endif
 
 if BUILD_BITCOIN_UTILS
-  bin_PROGRAMS += bitcoin-cli bitcoin-tx
+  bin_PROGRAMS += devcoin-cli devcoin-tx
 endif
 
 .PHONY: FORCE
@@ -258,8 +258,8 @@ libbitcoin_cli_a_SOURCES = \
 nodist_libbitcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 #
 
-# bitcoind binary #
-bitcoind_LDADD = \
+# devcoind binary #
+devcoind_LDADD = \
   $(LIBBITCOIN_SERVER) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UNIVALUE) \
@@ -269,25 +269,25 @@ bitcoind_LDADD = \
   $(LIBMEMENV)
 
 if USE_LIBSECP256K1
-  bitcoind_LDADD += secp256k1/libsecp256k1.la
+  devcoind_LDADD += secp256k1/libsecp256k1.la
 endif
 
 if ENABLE_WALLET
-bitcoind_LDADD += libbitcoin_wallet.a
+devcoind_LDADD += libbitcoin_wallet.a
 endif
-bitcoind_SOURCES = bitcoind.cpp
+devcoind_SOURCES = bitcoind.cpp
 #
 
 if TARGET_WINDOWS
-bitcoind_SOURCES += bitcoind-res.rc
+devcoind_SOURCES += bitcoind-res.rc
 endif
 
-bitcoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS)
-bitcoind_CPPFLAGS = $(BITCOIN_INCLUDES)
-bitcoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS)
+devcoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS)
+devcoind_CPPFLAGS = $(BITCOIN_INCLUDES)
+devcoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS)
 
 # bitcoin-cli binary #
-bitcoin_cli_LDADD = \
+devcoin_cli_LDADD = \
   $(LIBBITCOIN_CLI) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
@@ -296,38 +296,38 @@ bitcoin_cli_LDADD = \
   $(SSL_LIBS) \
   $(CRYPTO_LIBS)
 
-bitcoin_cli_SOURCES = \
+devcoin_cli_SOURCES = \
   bitcoin-cli.cpp
 
 if USE_LIBSECP256K1
-  bitcoin_cli_LDADD += secp256k1/libsecp256k1.la
+  devcoin_cli_LDADD += secp256k1/libsecp256k1.la
 endif
-bitcoin_cli_CPPFLAGS = $(BITCOIN_INCLUDES)
+devcoin_cli_CPPFLAGS = $(BITCOIN_INCLUDES)
 #
 
 # bitcoin-tx binary #
-bitcoin_tx_LDADD = \
+devcoin_tx_LDADD = \
   $(LIBBITCOIN_UNIVALUE) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_CRYPTO)
 
 if USE_LIBSECP256K1
-  bitcoin_tx_LDADD += secp256k1/libsecp256k1.la
+  devcoin_tx_LDADD += secp256k1/libsecp256k1.la
 endif
 
-  bitcoin_tx_LDADD += $(BOOST_LIBS) \
+  devcoin_tx_LDADD += $(BOOST_LIBS) \
   $(SSL_LIBS) \
   $(CRYPTO_LIBS)
-bitcoin_tx_SOURCES = bitcoin-tx.cpp
-bitcoin_tx_CPPFLAGS = $(BITCOIN_INCLUDES)
+devcoin_tx_SOURCES = bitcoin-tx.cpp
+devcoin_tx_CPPFLAGS = $(BITCOIN_INCLUDES)
 #
-bitcoin_tx_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS)
+devcoin_tx_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS)
 
 if TARGET_WINDOWS
-bitcoin_cli_SOURCES += bitcoin-cli-res.rc
+devcoin_cli_SOURCES += bitcoin-cli-res.rc
 endif
-bitcoin_cli_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS)
+devcoin_cli_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS)
 
 CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a *.gcda *.gcno
 
